@@ -18,12 +18,10 @@ from sklearn.metrics import (
 # Library untuk MLOps (DagsHub & MLflow)
 import mlflow
 import mlflow.sklearn
-import dagshub
 
 
 def setup_mlflow_dagshub():
-    """Fungsi untuk menghubungkan MLflow lokal ke server Cloud DagsHub."""
-    # Membaca tautan dari DagsHub.txt
+    """Fungsi pintar untuk memisahkan autentikasi lokal dan GitHub Actions."""
     base_dir = os.path.dirname(os.path.abspath(__file__))
     dagshub_file = os.path.join(base_dir, "DagsHub.txt")
 
@@ -33,17 +31,26 @@ def setup_mlflow_dagshub():
     with open(dagshub_file, "r") as f:
         mlflow_url = f.read().strip()
 
-    # Konfigurasi MLflow Remote URL
+    # Kunci Utama: Set alamat remote MLflow
     mlflow.set_tracking_uri(mlflow_url)
 
-    # Ekstrak username dan repo name dari URL untuk inisialisasi DagsHub
-    # URL format: https://dagshub.com/username/repo_name.mlflow
-    parts = mlflow_url.split("/")
-    username = parts[3]
-    repo_name = parts[4].split(".")[0]
+    # Cek apakah skrip ini sedang dijalankan oleh Robot GitHub Actions
+    if "GITHUB_ACTIONS" in os.environ:
+        print("[INFO] Terdeteksi environment GitHub Actions.")
+        print(
+            "[INFO] Menggunakan autentikasi langsung via Environment Variables (Skip dagshub.init)."
+        )
+    else:
+        # Jika di laptop lokal, jalankan dagshub.init seperti biasa
+        import dagshub
 
-    print(f"[INFO] Menginisialisasi DagsHub untuk {username}/{repo_name}")
-    dagshub.init(repo_owner=username, repo_name=repo_name, mlflow=True)
+        parts = mlflow_url.split("/")
+        username = parts[3]
+        repo_name = parts[4].split(".")[0]
+        print(
+            f"[INFO] Terdeteksi environment Lokal. Menginisialisasi DagsHub untuk {username}/{repo_name}"
+        )
+        dagshub.init(repo_owner=username, repo_name=repo_name, mlflow=True)
 
 
 def main():
@@ -74,13 +81,12 @@ def main():
     # 3. Menentukan Hyperparameter Model
     n_estimators = 100
     max_depth = 10
-    class_weight = "balanced"  # Strategi ampuh untuk mengatasi data jomplang!
+    class_weight = "balanced"
 
-    # 4. Memulai Pencatatan Eksperimen Manual di MLflow (Wajib untuk Advance)
+    # 4. Memulai Pencatatan Eksperimen Manual di MLflow
     with mlflow.start_run(run_name="Random_Forest_Manual_Log"):
         print("[2/5] Melatih model Random Forest...")
 
-        # Inisialisasi dan latih model
         model = RandomForestClassifier(
             n_estimators=n_estimators,
             max_depth=max_depth,
@@ -89,10 +95,9 @@ def main():
         )
         model.fit(X_train, y_train)
 
-        # Prediksi ke data test
         y_pred = model.predict(X_test)
 
-        # 5. Menghitung Metrik Evaluasi
+        # Menghitung Metrik Evaluasi
         acc = accuracy_score(y_test, y_pred)
         prec = precision_score(y_test, y_pred)
         rec = recall_score(y_test, y_pred)
@@ -102,21 +107,19 @@ def main():
             f"      Metrik -> Acc: {acc:.4f}, Precision: {prec:.4f}, Recall: {rec:.4f}, F1: {f1:.4f}"
         )
 
-        # 6. MANUAL LOGGING (Pencatatan Manual ke MLflow Cloud)
+        # 5. MANUAL LOGGING
         print("[3/5] Mengirim parameter dan metrik ke DagsHub...")
-        # Log Hyperparameters
         mlflow.log_param("model_type", "RandomForest")
         mlflow.log_param("n_estimators", n_estimators)
         mlflow.log_param("max_depth", max_depth)
         mlflow.log_param("class_weight", class_weight)
 
-        # Log Metrics
         mlflow.log_metric("accuracy", acc)
         mlflow.log_metric("precision", prec)
         mlflow.log_metric("recall", rec)
         mlflow.log_metric("f1_score", f1)
 
-        # 7. MEMBUAT DAN MENYIMPAN 2 ARTEFAK TAMBAHAN (Syarat Mutlak Advance)
+        # 6. MEMBUAT DAN MENYIMPAN 2 ARTEFAK TAMBAHAN
         print("[4/5] Membuat grafik artefak tambahan...")
         os.makedirs("temp_artifacts", exist_ok=True)
 
@@ -138,7 +141,7 @@ def main():
         plt.savefig(cm_path)
         plt.close()
 
-        # Artefak 2: Grafik Feature Importance (Fitur paling berpengaruh)
+        # Artefak 2: Grafik Feature Importance
         plt.figure(figsize=(8, 5))
         importances = model.feature_importances_
         indices = np.argsort(importances)[::-1]
@@ -149,11 +152,10 @@ def main():
         plt.savefig(fi_path)
         plt.close()
 
-        # Unggah artefak tersebut ke MLflow Cloud DagsHub
         mlflow.log_artifact(cm_path)
         mlflow.log_artifact(fi_path)
 
-        # 8. Menyimpan Model Utama ke MLflow Artifacts
+        # 7. Menyimpan Model Utama ke MLflow Artifacts
         print("[5/5] Mengunggah model ke MLflow Artifacts...")
         mlflow.sklearn.log_model(model, "predictive_maintenance_model")
 
