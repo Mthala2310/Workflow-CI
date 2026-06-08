@@ -56,8 +56,7 @@ def main():
     # 2. Memuat Dataset Hasil Preprocessing Kriteria 1
     base_dir = os.path.dirname(os.path.abspath(__file__))
     data_path = os.path.join(
-        base_dir,
-        "../preprocessing/namadataset_preprocessing/predictive_maintenance_clean.csv",
+        base_dir, "namadataset_preprocessing/predictive_maintenance_clean.csv"
     )
 
     print(f"[1/5] Memuat data bersih dari: {data_path}")
