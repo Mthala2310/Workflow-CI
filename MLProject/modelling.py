@@ -64,8 +64,20 @@ def main():
         X, y, test_size=0.2, random_state=42, stratify=y
     )
 
-    # Memulai run MLflow
-    with mlflow.start_run(run_name="Random_Forest_Manual_Log") as run:
+    # KUNCI UTAMA: Periksa apakah sudah ada Run aktif dari mlflow run
+    run = mlflow.active_run()
+    is_project_run = run is not None
+
+    if not is_project_run:
+        # Jika dijalankan manual di lokal, baru buat run baru
+        print("[INFO] Tidak ada run aktif. Memulai run baru secara manual.")
+        run = mlflow.start_run(run_name="Random_Forest_Manual_Log")
+    else:
+        print(
+            f"[INFO] Menemukan run aktif dari MLflow Project (ID: {run.info.run_id}). Menggunakan run ini."
+        )
+
+    try:
         print("[2/5] Melatih model Random Forest...")
         model = RandomForestClassifier(
             n_estimators=100, max_depth=10, class_weight="balanced", random_state=42
@@ -118,12 +130,17 @@ def main():
         print("[5/5] Mengunggah model ke MLflow Artifacts...")
         mlflow.sklearn.log_model(model, "predictive_maintenance_model")
 
-        # Kunci Sukses: Simpan RUN_ID asli ke file teks di luar folder agar bisa dibaca robot
+        # Simpan RUN_ID asli ke file teks di luar folder agar bisa dibaca oleh step Docker
         run_id = run.info.run_id
         with open(os.path.join(base_dir, "../run_id.txt"), "w") as f:
             f.write(run_id)
 
-        print(f"\n=== Run Sukses Terbaca! ID Latihan: {run_id} ===")
+        print(f"\n=== Proses Berhasil! ID Latihan: {run_id} ===")
+
+    finally:
+        # Akhiri run HANYA jika ini bukan diatur oleh mlflow run (mencegah penutupan prematur)
+        if not is_project_run:
+            mlflow.end_run()
 
 
 if __name__ == "__main__":
