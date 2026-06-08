@@ -31,7 +31,6 @@ def setup_mlflow_dagshub():
     with open(dagshub_file, "r") as f:
         mlflow_url = f.read().strip()
 
-    # Set alamat remote MLflow Cloud (Bersih tanpa modifikasi URL)
     mlflow.set_tracking_uri(mlflow_url)
 
     if "GITHUB_ACTIONS" in os.environ:
@@ -80,7 +79,6 @@ def main():
         rec = recall_score(y_test, y_pred)
         f1 = f1_score(y_test, y_pred)
 
-        # Manual logging ke DagsHub Cloud
         print("[3/5] Mengirim parameter dan metrik ke DagsHub...")
         mlflow.log_param("model_type", "RandomForest")
         mlflow.log_param("n_estimators", 100)
@@ -110,16 +108,23 @@ def main():
         plt.close()
         mlflow.log_artifact(cm_path)
 
-        # 5. Unggah model ke DagsHub Cloud (Syarat Kriteria 2 & 3)
-        print("[5/5] Mengunggah model ke MLflow Cloud Artifacts...")
-        mlflow.sklearn.log_model(model, "predictive_maintenance_model")
+        # Daftar library murni agar Docker Image tidak membawa sampah package dari GitHub Actions
+        core_requirements = ["mlflow", "scikit-learn", "pandas", "numpy"]
 
-        # KUNCI SUKSES: Simpan salinan model secara lokal untuk kebutuhan Docker Build (Anti Gagal)
+        # 5. Unggah model ke DagsHub Cloud dengan pip_requirements bersih
+        print("[5/5] Mengunggah model ke MLflow Cloud Artifacts...")
+        mlflow.sklearn.log_model(
+            model, "predictive_maintenance_model", pip_requirements=core_requirements
+        )
+
+        # Simpan salinan model secara lokal dengan pip_requirements bersih (Kunci lolos Docker Build)
         local_model_path = os.path.join(base_dir, "predictive_maintenance_model_local")
         if os.path.exists(local_model_path):
             shutil.rmtree(local_model_path)
 
-        mlflow.sklearn.save_model(model, local_model_path)
+        mlflow.sklearn.save_model(
+            model, local_model_path, pip_requirements=core_requirements
+        )
         print(f"[INFO] Salinan model lokal berhasil diamankan di: {local_model_path}")
 
     finally:
