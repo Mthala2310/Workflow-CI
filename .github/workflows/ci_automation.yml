@@ -24,37 +24,14 @@ jobs:
         python -m pip install --upgrade pip
         pip install mlflow dagshub scikit-learn pandas numpy matplotlib seaborn
 
-    # Langkah 4: Menyuntikkan kredensial langsung ke dalam string URL URI sebelum menjalankan project
+    # Jalankan pelatihan ulang menggunakan environment variable bawaan yang bersih
     - name: Run MLflow Project Re-training
       env:
-        USER_DAGSHUB: ${{ secrets.DAGSHUB_USERNAME }}
-        TOKEN_DAGSHUB: ${{ secrets.DAGSHUB_TOKEN }}
+        MLFLOW_TRACKING_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
+        MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
       run: |
-        RAW_URI=$(cat MLProject/DagsHub.txt)
-        AUTH_URI=$(echo $RAW_URI | sed "s|https://|https://$USER_DAGSHUB:$TOKEN_DAGSHUB@|")
-        echo "MLFLOW_TRACKING_URI=$AUTH_URI" >> $GITHUB_ENV
-        
-        # Jalankan dengan URI yang sudah ter-autentikasi penuh
-        MLFLOW_TRACKING_URI=$AUTH_URI mlflow run MLProject/ --entry-point main --env-manager local
-
-    # Langkah 5: Mengunduh model menggunakan URL ber-kredensial langsung (Anti Gagal)
-    - name: Download Model Artifact Locally
-      run: |
-        python -c "
-        import mlflow
-        import os
-        
-        # Ambil URL yang sudah mengandung username:token dari environment
-        auth_uri = os.environ['MLFLOW_TRACKING_URI']
-        mlflow.set_tracking_uri(auth_uri)
-        
-        with open('run_id.txt', 'r') as f:
-            run_id = f.read().strip()
-            
-        print(f'Mendownload model secara aman untuk Run ID: {run_id}')
-        mlflow.artifacts.download_artifacts(run_id=run_id, artifact_path='predictive_maintenance_model', dst_path='.')
-        print('Model berhasil diamankan di folder lokal!')
-        "
+        export MLFLOW_TRACKING_URI=$(cat MLProject/DagsHub.txt)
+        mlflow run MLProject/ --entry-point main --env-manager local
 
     - name: Log in to Docker Hub
       uses: docker/login-action@v3
@@ -62,9 +39,9 @@ jobs:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-    # Langkah 6: Bangun Docker Image dari path lokal yang sudah pasti berhasil diunduh
+    # Bangun Docker Image langsung dari folder lokal hasil generate langkah ke-4
     - name: Build and Push Docker Image
       run: |
-        echo "Mengemas Docker Image menggunakan model lokal..."
-        mlflow models build-docker -m "./predictive_maintenance_model" -n "${{ secrets.DOCKERHUB_USERNAME }}/predictive-maintenance-model:latest" --enable-mlserver
+        echo "Mengemas Docker Image menggunakan model lokal yang aman..."
+        mlflow models build-docker -m "MLProject/predictive_maintenance_model_local" -n "${{ secrets.DOCKERHUB_USERNAME }}/predictive-maintenance-model:latest" --enable-mlserver
         docker push "${{ secrets.DOCKERHUB_USERNAME }}/predictive-maintenance-model:latest"
