@@ -12,13 +12,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # 1. Ambil kode dari repositori
+    # 1. Ambil kode dari repositori (Diperbarui ke v4 agar bebas warning)
     - name: Checkout Repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
-    # 2. Setup Python environment
+    # 2. Setup Python environment (Diperbarui ke v5 agar bebas warning)
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.9'
 
@@ -28,23 +28,20 @@ jobs:
         python -m pip install --upgrade pip
         pip install mlflow dagshub scikit-learn pandas numpy matplotlib seaborn
 
-    # 4. Jalankan Re-training Model menggunakan MLflow Project (Syarat Basic)
+    # 4. Jalankan Re-training Model dengan menambahkan flag --env-manager local
     - name: Run MLflow Project Re-training
       run: |
-        mlflow run MLProject/ --entry-point main
+        mlflow run MLProject/ --entry-point main --env-manager local
 
-    # 5. Login ke Docker Hub secara aman menggunakan GitHub Secrets
+    # 5. Login ke Docker Hub secara aman menggunakan GitHub Secrets (Diperbarui ke v3)
     - name: Log in to Docker Hub
-      uses: docker/login-action@v2
+      uses: docker/login-action@v3
       with:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-    # 6. Build & Push Docker Image menggunakan perintah mlflow build-docker (Syarat Advance)
+    # 6. Build & Push Docker Image menggunakan perintah mlflow build-docker
     - name: Build and Push Docker Image
       run: |
-        # Menggunakan perintah mlflow models build-docker untuk membungkus environment model
         mlflow models build-docker -m "runs:/latest/model" -n "${{ secrets.DOCKERHUB_USERNAME }}/predictive-maintenance-model:latest" --enable-mlserver
-        
-        # Push image yang berhasil dibuat ke Docker Hub Cloud
         docker push ${{ secrets.DOCKERHUB_USERNAME }}/predictive-maintenance-model:latest
