@@ -68,4 +68,4 @@ jobs:
         echo "Mengirim Docker Image sukses ke Docker Hub Cloud..."
         docker push "${{ secrets.DOCKERHUB_USERNAME }}/predictive-maintenance-model:latest"
         
-        print("=== Kriteria 3 Selesai dengan Sempurna ===")
+        echo "=== Kriteria 3 Selesai dengan Sempurna ==="
