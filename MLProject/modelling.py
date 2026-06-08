@@ -15,13 +15,13 @@ from sklearn.metrics import (
     confusion_matrix,
 )
 
-# Library untuk MLOps (DagsHub & MLflow)
+# Library untuk MLOps
 import mlflow
 import mlflow.sklearn
 
 
 def setup_mlflow_dagshub():
-    """Fungsi pintar untuk memisahkan autentikasi lokal dan GitHub Actions."""
+    """Fungsi mendeteksi environment dan mengatur tracking URI."""
     base_dir = os.path.dirname(os.path.abspath(__file__))
     dagshub_file = os.path.join(base_dir, "DagsHub.txt")
 
@@ -31,36 +31,25 @@ def setup_mlflow_dagshub():
     with open(dagshub_file, "r") as f:
         mlflow_url = f.read().strip()
 
-    # Kunci Utama: Set alamat remote MLflow
+    # Set alamat remote MLflow Cloud
     mlflow.set_tracking_uri(mlflow_url)
 
-    # Cek apakah skrip ini sedang dijalankan oleh Robot GitHub Actions
     if "GITHUB_ACTIONS" in os.environ:
-        print("[INFO] Terdeteksi environment GitHub Actions.")
-        print(
-            "[INFO] Menggunakan autentikasi langsung via Environment Variables (Skip dagshub.init)."
-        )
+        print("[INFO] Environment: GitHub Actions. Autentikasi token aktif.")
     else:
-        # Jika di laptop lokal, jalankan dagshub.init seperti biasa
         import dagshub
 
         parts = mlflow_url.split("/")
-        username = parts[3]
-        repo_name = parts[4].split(".")[0]
         print(
-            f"[INFO] Terdeteksi environment Lokal. Menginisialisasi DagsHub untuk {username}/{repo_name}"
+            f"[INFO] Environment: Lokal. Menginisialisasi DagsHub untuk {parts[3]}/{parts[4].split('.')[0]}"
         )
-        dagshub.init(repo_owner=username, repo_name=repo_name, mlflow=True)
+        dagshub.init(repo_owner=parts[3], repo_name=parts[4].split(".")[0], mlflow=True)
 
 
 def main():
-    # 1. Setup Koneksi ke DagsHub
     setup_mlflow_dagshub()
-
-    # Set nama eksperimen di MLflow
     mlflow.set_experiment("Predictive_Maintenance_Experiment")
 
-    # 2. Memuat Dataset Hasil Preprocessing Kriteria 1
     base_dir = os.path.dirname(os.path.abspath(__file__))
     data_path = os.path.join(
         base_dir, "namadataset_preprocessing/predictive_maintenance_clean.csv"
@@ -69,35 +58,21 @@ def main():
     print(f"[1/5] Memuat data bersih dari: {data_path}")
     df = pd.read_csv(data_path)
 
-    # Memisahkan Fitur (X) dan Target (y)
     X = df.drop(columns=["Target"])
     y = df["Target"]
-
-    # Split data menjadi Train set (80%) dan Test set (20%)
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42, stratify=y
     )
 
-    # 3. Menentukan Hyperparameter Model
-    n_estimators = 100
-    max_depth = 10
-    class_weight = "balanced"
-
-    # 4. Memulai Pencatatan Eksperimen Manual di MLflow
-    with mlflow.start_run(run_name="Random_Forest_Manual_Log"):
+    # Memulai run MLflow
+    with mlflow.start_run(run_name="Random_Forest_Manual_Log") as run:
         print("[2/5] Melatih model Random Forest...")
-
         model = RandomForestClassifier(
-            n_estimators=n_estimators,
-            max_depth=max_depth,
-            class_weight=class_weight,
-            random_state=42,
+            n_estimators=100, max_depth=10, class_weight="balanced", random_state=42
         )
         model.fit(X_train, y_train)
 
         y_pred = model.predict(X_test)
-
-        # Menghitung Metrik Evaluasi
         acc = accuracy_score(y_test, y_pred)
         prec = precision_score(y_test, y_pred)
         rec = recall_score(y_test, y_pred)
@@ -107,23 +82,21 @@ def main():
             f"      Metrik -> Acc: {acc:.4f}, Precision: {prec:.4f}, Recall: {rec:.4f}, F1: {f1:.4f}"
         )
 
-        # 5. MANUAL LOGGING
+        # Manual logging ke DagsHub
         print("[3/5] Mengirim parameter dan metrik ke DagsHub...")
         mlflow.log_param("model_type", "RandomForest")
-        mlflow.log_param("n_estimators", n_estimators)
-        mlflow.log_param("max_depth", max_depth)
-        mlflow.log_param("class_weight", class_weight)
+        mlflow.log_param("n_estimators", 100)
+        mlflow.log_param("max_depth", 10)
+        mlflow.log_param("class_weight", "balanced")
 
         mlflow.log_metric("accuracy", acc)
         mlflow.log_metric("precision", prec)
         mlflow.log_metric("recall", rec)
         mlflow.log_metric("f1_score", f1)
 
-        # 6. MEMBUAT DAN MENYIMPAN 2 ARTEFAK TAMBAHAN
-        print("[4/5] Membuat grafik artefak tambahan...")
+        # Membuat Grafik Artefak
+        print("[4/5] Membuat grafik artefak...")
         os.makedirs("temp_artifacts", exist_ok=True)
-
-        # Artefak 1: Grafik Confusion Matrix
         plt.figure(figsize=(6, 5))
         cm = confusion_matrix(y_test, y_pred)
         sns.heatmap(
@@ -134,32 +107,23 @@ def main():
             xticklabels=["Normal", "Rusak"],
             yticklabels=["Normal", "Rusak"],
         )
-        plt.title("Confusion Matrix - Predictive Maintenance")
-        plt.ylabel("Aktual")
-        plt.xlabel("Prediksi")
+        plt.title("Confusion Matrix")
         cm_path = "temp_artifacts/confusion_matrix.png"
         plt.savefig(cm_path)
         plt.close()
 
-        # Artefak 2: Grafik Feature Importance
-        plt.figure(figsize=(8, 5))
-        importances = model.feature_importances_
-        indices = np.argsort(importances)[::-1]
-        sns.barplot(x=importances[indices], y=X.columns[indices], palette="viridis")
-        plt.title("Feature Importance")
-        plt.xlabel("Skor Kepentingan")
-        fi_path = "temp_artifacts/feature_importance.png"
-        plt.savefig(fi_path)
-        plt.close()
-
         mlflow.log_artifact(cm_path)
-        mlflow.log_artifact(fi_path)
 
-        # 7. Menyimpan Model Utama ke MLflow Artifacts
+        # Simpan Model
         print("[5/5] Mengunggah model ke MLflow Artifacts...")
         mlflow.sklearn.log_model(model, "predictive_maintenance_model")
 
-        print("\n=== Eksperimen Selesai! Silakan cek Dashboard DagsHub Anda ===")
+        # Kunci Sukses: Simpan RUN_ID asli ke file teks di luar folder agar bisa dibaca robot
+        run_id = run.info.run_id
+        with open(os.path.join(base_dir, "../run_id.txt"), "w") as f:
+            f.write(run_id)
+
+        print(f"\n=== Run Sukses Terbaca! ID Latihan: {run_id} ===")
 
 
 if __name__ == "__main__":
